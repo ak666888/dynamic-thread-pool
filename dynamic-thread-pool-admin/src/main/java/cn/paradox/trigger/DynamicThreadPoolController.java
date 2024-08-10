@@ -1,0 +1,66 @@
+package cn.paradox.trigger;
+
+import cn.paradox.sdk.domain.model.entity.ThreadPoolConfigEntity;
+import cn.paradox.types.Response;
+import com.alibaba.fastjson.JSON;
+import lombok.extern.slf4j.Slf4j;
+import org.redisson.Redisson;
+import org.redisson.api.RList;
+import org.redisson.api.RTopic;
+import org.redisson.api.RedissonClient;
+import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
+import java.util.List;
+
+@Slf4j
+@RestController
+@CrossOrigin("*")
+@RequestMapping("/api/v1/dynamic/thread/pool/")
+public class DynamicThreadPoolController {
+
+    @Resource
+    public RedissonClient redissonClient;
+
+    @RequestMapping(value = "query_thread_pool_list", method = RequestMethod.GET)
+    public Response<List<ThreadPoolConfigEntity>> queryThreadPoolList() {
+        try {
+            RList<ThreadPoolConfigEntity> cacheList = redissonClient.getList("THREAD_POOL_CONFIG_LIST_KEY");
+            log.info("查询线程池清单 {}", JSON.toJSONString(cacheList));
+            return Response.<List<ThreadPoolConfigEntity>>builder().code(Response.Code.SUCCESS.getCode()).info(Response.Code.SUCCESS.getInfo()).data(cacheList.readAll()).build();
+        } catch (Exception e) {
+            log.error("查询线程池数据异常", e);
+            return Response.<List<ThreadPoolConfigEntity>>builder().code(Response.Code.UN_ERROR.getCode()).info(Response.Code.UN_ERROR.getInfo()).build();
+        }
+    }
+
+    @RequestMapping(value = "query_thread_pool_config", method = RequestMethod.GET)
+    public Response<ThreadPoolConfigEntity> queryThreadPoolConfig(@RequestParam String appName, @RequestParam String threadPoolName) {
+        try {
+            String cacheKey = "THREAD_POOL_CONFIG_PARAMETER_LIST_KEY" + "_" + appName + "_" + threadPoolName;
+            ThreadPoolConfigEntity threadPoolConfig = redissonClient.<ThreadPoolConfigEntity>getBucket(cacheKey).get();
+
+            return Response.<ThreadPoolConfigEntity>builder().code(Response.Code.SUCCESS.getCode()).info(Response.Code.SUCCESS.getInfo()).data(threadPoolConfig).build();
+
+        } catch (Exception e) {
+            log.error("查询线程池配置异常", e);
+            return Response.<ThreadPoolConfigEntity>builder().code(Response.Code.UN_ERROR.getCode()).info(Response.Code.UN_ERROR.getInfo()).build();
+        }
+
+    }
+
+    @RequestMapping(value = "update_thread_pool_config", method = RequestMethod.POST)
+    public Response<Boolean> updateThreadPoolConfig(@RequestBody ThreadPoolConfigEntity request) {
+        try {
+            log.info("修改线程池配置开始 {} {}", request.getAppName(), request.getThreadPoolName());
+            RTopic topic = redissonClient.getTopic("DYNAMIC_THREAD_POOL_REDIS_TOPIC" + "_" + request.getAppName());
+            topic.publish(request);
+            log.info("修改线程池配置完成 {} {}", request.getAppName(), request.getThreadPoolName());
+            return Response.<Boolean>builder().code(Response.Code.SUCCESS.getCode()).info(Response.Code.SUCCESS.getInfo()).data(true).build();
+        } catch (Exception e) {
+            log.error("修改线程池配置异常 {}", JSON.toJSONString(request), e);
+            return Response.<Boolean>builder().code(Response.Code.UN_ERROR.getCode()).info(Response.Code.UN_ERROR.getInfo()).build();
+        }
+    }
+
+}
